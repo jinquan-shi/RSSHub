@@ -1,11 +1,10 @@
-import { Route } from '@/types';
+import { load } from 'cheerio';
+
+import type { DataItem, Route } from '@/types';
 import cache from '@/utils/cache';
 import got from '@/utils/got';
-import { load } from 'cheerio';
 import { parseDate } from '@/utils/parse-date';
 import timezone from '@/utils/timezone';
-
-const type = (filename) => filename.split('.').pop();
 
 export const route: Route = {
     path: '/bksy',
@@ -18,7 +17,7 @@ export const route: Route = {
         },
     ],
     name: '本科生院通知',
-    maintainers: ['ChiyoYuki', 'FrozenStarrrr'],
+    maintainers: ['FrozenStarrrr', 'ChiyoYuki', 'ECNU-minus'],
     handler: async () => {
         const baseUrl = 'https://bksy.ecnu.edu.cn/';
 
@@ -26,30 +25,19 @@ export const route: Route = {
         const $ = load(response.data);
         const links = $('ul.news_list.list2 > li')
             .toArray()
-            .map((el) => ({
+            .map((el): DataItem & { link: string } => ({
                 pubDate: timezone(parseDate($(el).find('.news_date').text()), 8),
-                link: new URL($(el).find('a').attr('href'), baseUrl).toString(),
+                link: new URL($(el).find('a').attr('href')!, baseUrl).href,
                 title: $(el).find('.news_title').text(),
             }));
         const items = await Promise.all(
             links.map((item) =>
                 cache.tryGet(item.link, async () => {
-                    if (type(item.link) === 'htm') {
-                        try {
-                            const { data } = await got(item.link);
-                            const $ = load(data);
-                            item.description = $('div.article')?.html()?.replaceAll('src="/', `src="${baseUrl}/`)?.replaceAll('href="/', `href="${baseUrl}/`)?.trim();
-                            return item;
-                        } catch {
-                            // intranet
-                            item.description = '请进行统一身份认证之后再访问';
-                            return item;
-                        }
-                    } else {
-                        // file to download
-                        item.description = '点击认证后访问内容';
-                        return item;
-                    }
+                    const { data } = await got(item.link);
+                    const $ = load(data);
+                    const $read = $('div.read');
+                    item.description = $read.html()?.trim();
+                    return item;
                 })
             )
         );
